@@ -4,13 +4,15 @@ import os
 import threading
 import subprocess
 import requests
+import json
 
 class MinecraftServerManager:
     def __init__(self, root):
         self.root = root
         self.servers = {}
-        self.server_frames = []
+        self.server_frames = {}
         self.init_ui()
+        self.load_servers()
 
     def init_ui(self):
         self.root.title("Minecraft Server Manager")
@@ -33,6 +35,7 @@ class MinecraftServerManager:
                 server_name = os.path.basename(folder_path)
                 self.servers[server_name] = {"folder": folder_path, "jar": jar_file}
                 self.add_server_to_ui(server_name)
+                self.save_servers()
 
     def add_server_to_ui(self, server_name):
         server_frame = tk.Frame(self.servers_frame, borderwidth=1, relief=tk.SUNKEN)
@@ -42,19 +45,16 @@ class MinecraftServerManager:
         server_label.pack(side=tk.LEFT, padx=5)
 
         start_button = tk.Button(server_frame, text="Start", command=lambda: self.start_server(server_name))
-        start_button.pack(side=tk.RIGHT, padx=5)
+        start_button.pack(side=tk.LEFT, padx=5)
 
-        self.server_frames.append(server_frame)
+        delete_button = tk.Button(server_frame, text="Delete", command=lambda: self.delete_server(server_name))
+        delete_button.pack(side=tk.RIGHT, padx=5)
 
+        self.server_frames[server_name] = server_frame
 
     def create_server(self):
         self.create_server_window = tk.Toplevel(self.root)
         self.create_server_window.title("Create a New Server")
-
-        # Options pour le type de serveur
-        self.server_type_var = tk.StringVar(value="Paper")
-        tk.Radiobutton(self.create_server_window, text="Paper", variable=self.server_type_var, value="Paper").pack(anchor=tk.W)
-        tk.Radiobutton(self.create_server_window, text="Magma", variable=self.server_type_var, value="Magma").pack(anchor=tk.W)
 
         # Options pour la version du serveur
         self.server_version_var = tk.StringVar()
@@ -69,82 +69,60 @@ class MinecraftServerManager:
         create_button = tk.Button(self.create_server_window, text="Create Server", command=self.download_and_create_server)
         create_button.pack(pady=10)
 
-    def download_and_create_server(self):
-        server_type = self.server_type_var.get()
-        version = self.server_version_var.get()
-        server_name = self.server_name_var.get()
+def download_and_create_server(self):
+    version = self.server_version_var.get()
+    server_name = self.server_name_var.get()
 
-        if not server_name or not version:
-            messagebox.showerror("Error", "Please enter both server name and version.")
-            return
-        
-        
+    if not server_name or not version:
+        messagebox.showerror("Error", "Please enter both server name and version.")
+        return
 
+    # Construisez l'URL correctement basé sur la documentation de l'API PaperMC
+    url = f"https://papermc.io/api/v2/projects/paper/versions/{version}/builds/latest/downloads/paper-{version}-latest.jar"
 
-        # Construire l'URL de téléchargement en fonction du type et de la version
-        if server_type == "Paper":
-            url = f"https://api.papermc.io/v2/projects/paper/versions/{version}/builds/138/downloads/paper-{version}-138.jar"
-        elif server_type == "Magma":
-            # URL exemple pour Magma, peut nécessiter une mise à jour selon la structure exacte de leur API
-            url = f"https://git.magmafoundation.org/api/v4/projects/5/packages/maven/org/magmafoundation/Magma/{version}/latest/Magma-{version}-latest-server.jar"
-        else:
-            messagebox.showerror("Error", "Invalid server type.")
-            return
+    server_folder = os.path.join(os.getcwd(), 'MinecraftServerManager', server_name)
+    os.makedirs(server_folder, exist_ok=True)
 
-        server_folder = os.path.join(os.getenv('APPDATA'), 'MSM', server_name)
-        os.makedirs(server_folder, exist_ok=True)
-        
-        jar_file = os.path.join(server_folder, f"{server_name}.jar")
+    jar_file = os.path.join(server_folder, f"{server_name}.jar")
 
-        try:
-            response = requests.get(url)
-            with open(jar_file, 'wb') as file:
-                file.write(response.content)
+    try:
+        response = requests.get(url, stream=True)
+        if response.status_code == 200:
+            with open(jar_file, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=1024):
+                    f.write(chunk)
             self.servers[server_name] = {"folder": server_folder, "jar": jar_file}
             self.add_server_to_ui(server_name)
+            self.save_servers()
             self.create_server_window.destroy()
             messagebox.showinfo("Success", f"Server '{server_name}' created successfully.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to download and create the server: {e}")
+        else:
+            messagebox.showerror("Error", f"Failed to download the server JAR. The server version might be incorrect or not available.")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to download and create the server: {e}")
 
-
-    
 
     def start_server(self, server_name):
         server_info = self.servers.get(server_name)
         if server_info:
             jar_path = server_info["jar"]
             folder_path = server_info["folder"]
-
-            # Définir les valeurs de RAM ici
             xms = "1024M"
             xmx = "1024M"
-
-            # Lancer le processus du serveur
             self.process = subprocess.Popen(["java", "-Xms" + xms, "-Xmx" + xmx, "-jar", jar_path], cwd=folder_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, stdin=subprocess.PIPE)
-
-            # Créer une nouvelle fenêtre pour la console du serveur
             console_window = tk.Toplevel(self.root)
             console_window.title(f"Console - {server_name}")
             console_text = tk.Text(console_window, height=10)
             console_text.pack(fill=tk.BOTH, expand=True)
-
-            # Zone de texte pour entrer des commandes
             command_entry = tk.Entry(console_window)
             command_entry.pack(fill=tk.X, side=tk.BOTTOM, padx=5, pady=5)
-
-            # Fonction pour envoyer des commandes
             def send_command(event=None):
                 command = command_entry.get()
                 if command:
                     self.process.stdin.write(command + "\n")
                     self.process.stdin.flush()
                     command_entry.delete(0, tk.END)
-
-            # Associer la fonction d'envoi de commande à la zone de texte
             command_entry.bind("<Return>", send_command)
-
-            # Fonction pour mettre à jour la console
             def update_console():
                 while True:
                     line = self.process.stdout.readline()
@@ -152,25 +130,46 @@ class MinecraftServerManager:
                         console_text.insert(tk.END, line)
                     else:
                         break
-
-            # Lancer un thread pour lire les sorties du serveur
             thread = threading.Thread(target=update_console)
             thread.start()
-
-            # Cadre pour les boutons
-            buttons_frame = tk.Frame(console_window)
-            buttons_frame.pack(fill=tk.X, side=tk.BOTTOM)
-
-            # Bouton pour arrêter le serveur
-            stop_button = tk.Button(buttons_frame, text="Stop", command=lambda: self.stop_server(server_name, console_window, self.process))
+            stop_button = tk.Button(console_window, text="Stop", command=lambda: self.stop_server(server_name, console_window, self.process))
             stop_button.pack(side=tk.RIGHT, padx=5, pady=5)
 
+    def delete_server(self, server_name):
+        if messagebox.askyesno("Delete Server", f"Are you sure you want to delete '{server_name}'?"):
+            # Attempt to delete server directory
+            try:
+                os.rmdir(self.servers[server_name]['folder'])
+            except OSError as e:
+                messagebox.showerror("Error", "Failed to delete server folder. Please ensure it is empty and try again.")
+                return
+
+            # Remove from UI and internal storage
+            self.server_frames[server_name].destroy()
+            del self.servers[server_name]
+            del self.server_frames[server_name]
+            self.save_servers()
+
     def stop_server(self, server_name, console_window, process):
-        process.terminate()  # Arrêter le processus du serveur
-        console_window.destroy()  # Fermer la fenêtre de la console
+        process.terminate()
+        console_window.destroy()
         messagebox.showinfo("Server Stopped", f"Server '{server_name}' has been stopped.")
 
-# Create the main window and start the application
+    def load_servers(self):
+        try:
+            with open('servers.json', 'r') as file:
+                self.servers = json.load(file)
+            for server_name in self.servers.keys():
+                self.add_server_to_ui(server_name)
+        except FileNotFoundError:
+            self.servers = {}
+
+    def save_servers(self):
+        with open('servers.json', 'w') as file:
+            json.dump(self.servers, file, indent=4)
+
 root = tk.Tk()
 app = MinecraftServerManager(root)
 root.mainloop()
+
+
