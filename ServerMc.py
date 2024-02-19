@@ -10,7 +10,7 @@ class MinecraftServerManager:
     def __init__(self, root):
         self.root = root
         self.servers = {}
-        self.server_frames = {}
+        self.server_frames = []
         self.init_ui()
         self.load_servers()
 
@@ -45,12 +45,9 @@ class MinecraftServerManager:
         server_label.pack(side=tk.LEFT, padx=5)
 
         start_button = tk.Button(server_frame, text="Start", command=lambda: self.start_server(server_name))
-        start_button.pack(side=tk.LEFT, padx=5)
+        start_button.pack(side=tk.RIGHT, padx=5)
 
-        delete_button = tk.Button(server_frame, text="Delete", command=lambda: self.delete_server(server_name))
-        delete_button.pack(side=tk.RIGHT, padx=5)
-
-        self.server_frames[server_name] = server_frame
+        self.server_frames.append(server_frame)
 
     def create_server(self):
         self.create_server_window = tk.Toplevel(self.root)
@@ -69,38 +66,32 @@ class MinecraftServerManager:
         create_button = tk.Button(self.create_server_window, text="Create Server", command=self.download_and_create_server)
         create_button.pack(pady=10)
 
-def download_and_create_server(self):
-    version = self.server_version_var.get()
-    server_name = self.server_name_var.get()
+    def download_and_create_server(self):
+        version = self.server_version_var.get()
+        server_name = self.server_name_var.get()
 
-    if not server_name or not version:
-        messagebox.showerror("Error", "Please enter both server name and version.")
-        return
+        if not server_name or not version:
+            messagebox.showerror("Error", "Please enter both server name and version.")
+            return
 
-    # Construisez l'URL correctement basé sur la documentation de l'API PaperMC
-    url = f"https://papermc.io/api/v2/projects/paper/versions/{version}/builds/latest/downloads/paper-{version}-latest.jar"
+        url = f"https://api.papermc.io/v2/projects/paper/versions/{version}/builds/latest/downloads/paper-{version}-latest.jar"
 
-    server_folder = os.path.join(os.getcwd(), 'MinecraftServerManager', server_name)
-    os.makedirs(server_folder, exist_ok=True)
+        server_folder = os.path.join(os.getenv('APPDATA'), 'MinecraftServerManager', server_name)
+        os.makedirs(server_folder, exist_ok=True)
+        
+        jar_file = os.path.join(server_folder, f"{server_name}.jar")
 
-    jar_file = os.path.join(server_folder, f"{server_name}.jar")
-
-    try:
-        response = requests.get(url, stream=True)
-        if response.status_code == 200:
-            with open(jar_file, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=1024):
-                    f.write(chunk)
+        try:
+            response = requests.get(url)
+            with open(jar_file, 'wb') as file:
+                file.write(response.content)
             self.servers[server_name] = {"folder": server_folder, "jar": jar_file}
             self.add_server_to_ui(server_name)
             self.save_servers()
             self.create_server_window.destroy()
             messagebox.showinfo("Success", f"Server '{server_name}' created successfully.")
-        else:
-            messagebox.showerror("Error", f"Failed to download the server JAR. The server version might be incorrect or not available.")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to download and create the server: {e}")
-
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to download and create the server: {e}")
 
     def start_server(self, server_name):
         server_info = self.servers.get(server_name)
@@ -135,21 +126,6 @@ def download_and_create_server(self):
             stop_button = tk.Button(console_window, text="Stop", command=lambda: self.stop_server(server_name, console_window, self.process))
             stop_button.pack(side=tk.RIGHT, padx=5, pady=5)
 
-    def delete_server(self, server_name):
-        if messagebox.askyesno("Delete Server", f"Are you sure you want to delete '{server_name}'?"):
-            # Attempt to delete server directory
-            try:
-                os.rmdir(self.servers[server_name]['folder'])
-            except OSError as e:
-                messagebox.showerror("Error", "Failed to delete server folder. Please ensure it is empty and try again.")
-                return
-
-            # Remove from UI and internal storage
-            self.server_frames[server_name].destroy()
-            del self.servers[server_name]
-            del self.server_frames[server_name]
-            self.save_servers()
-
     def stop_server(self, server_name, console_window, process):
         process.terminate()
         console_window.destroy()
@@ -171,5 +147,7 @@ def download_and_create_server(self):
 root = tk.Tk()
 app = MinecraftServerManager(root)
 root.mainloop()
+
+
 
 
